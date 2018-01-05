@@ -1,0 +1,445 @@
+// created by florian berger (flockaroo) - 2017
+// License Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
+
+// atomium soldering fun
+
+// same in shaderoo (+zoom in/out):
+//    https://www.shaderoo.org/?shader=xI6vZz
+// also check out geometry version in shaderoo (download as .obj):
+//    https://www.shaderoo.org/?shader=bGKarn
+
+// non periodic tilings on a sphere, startig from an icosahedron
+
+// golden ratio - used for icosahedron
+#define PI2 6.28318531
+#define G (.5+sqrt(5./4.))
+
+#define XCHGV3(a,b) { vec3 d=a; a=b; b=d; }
+
+void sortXYZ(inout vec3 p1, inout vec3 p2, inout vec3 p3)
+{
+    #define W(p) (p.x+p.y*.01+p.z*.0001)
+    if(W(p3)>W(p2)) XCHGV3(p3,p2);
+    if(W(p2)>W(p1)) XCHGV3(p2,p1);
+    if(W(p3)>W(p2)) XCHGV3(p3,p2);
+    if(W(p2)>W(p1)) XCHGV3(p2,p1);
+}
+
+// get closest icosahedron triangle by geometric categorizion
+// using icosa symmetry, so dont have to check for every icosa point
+void getIcosaTri(vec3 pos, out vec3 p1, out vec3 p2, out vec3 p3)
+{
+    mat2 rot=mat2(0.809016994374947, 0.587785252292473, -0.587785252292473, 0.809016994374947);
+    
+    float ph = atan(pos.y,pos.x);  ph=(ph<0.)?PI2+ph:ph;
+    
+    float dang=PI2/5.;
+    float seg=ph/dang;
+    float fseg=floor(seg);
+    
+    // 3 topmost points of segment + lower point of seg (p4t)
+    vec3 p1t=vec3(0,0,1.);
+    vec3 p2t=vec3(cos(fseg*dang-vec2(0,PI2/4.))*.894427190999916,.447213595499958);
+    vec3 p4t=vec3(rot*p2t.xy,-p2t.z);
+    vec3 p3t=vec3(rot*p4t.xy, p2t.z);
+
+    if (dot(pos,cross(p2t,p4t))<0. || dot(pos,cross(p4t,p3t))<0.) {
+        // xchg p2 and p3 (because bottom is mirrored in z)
+        p1t=vec3(0,0,-1.);
+        p3t=vec3((seg-fseg<.5)?p2t.xy*rot:rot*p2t.xy,-p2t.z);
+        p4t=vec3(rot*p3t.xy,-p3t.z);
+        p2t=vec3(rot*p4t.xy, p3t.z);
+    }
+
+    // mix top or below
+    bool top=(dot(pos,cross(p2t,p3t))>0.);
+    p1=top?p1t:p4t; 
+    p2=top?p2t:p3t; 
+    p3=top?p3t:p2t;
+}
+
+// get closest icosahedron triangle by geometric categorizion
+void getIcosaTri2(vec3 pos, out vec3 p1, out vec3 p2, out vec3 p3)
+{
+    float ph = atan(pos.y,pos.x);  ph=(ph<0.)?PI2+ph:ph;
+    vec2 csth0=vec2(.447213595499958,.894427190999916);
+    
+    float dang=PI2/5.;
+    vec2 ang=floor(ph/dang)*dang-vec2(0,PI2/4.);
+    //vec2 r=cos(.5*dang-vec2(0,PI2/4.));
+    //mat2 rot=mat2(r.x,r.y,-r.y,r.x);
+    mat2 rot=mat2(0.809016994374947, 0.587785252292473, -0.587785252292473, 0.809016994374947);
+    
+    // 3 topmost points of segment + lower point of seg (p4t)
+    vec3 p1t=vec3(0,0,1.);
+    vec3 p2t=vec3(cos(ang),         1)*csth0.yyx;
+    vec3 p3t=vec3(cos(ang+dang),    1)*csth0.yyx;
+    vec3 p4t=vec3(cos(ang+dang*.5),-1)*csth0.yyx;
+
+    if (dot(pos,cross(p2t,p4t))<0. || dot(pos,cross(p4t,p3t))<0.) {
+        // xchg p2 and p3 (because bottom is mirrored in z)
+        ang=(floor(ph/dang-.5)+.5)*dang-vec2(0,PI2/4.);
+        p1t=vec3(0,0,-1.);
+        p3t=vec3(cos(ang),        -1)*csth0.yyx;
+        p2t=vec3(cos(ang+dang   ),-1)*csth0.yyx;
+        p4t=vec3(cos(ang+dang*.5), 1)*csth0.yyx;
+    }
+
+    // mix top or below
+    bool top=(dot(pos,cross(p2t,p3t))>0.);
+    p1=top?p1t:p4t; 
+    p2=top?p2t:p3t; 
+    p3=top?p3t:p2t;
+}
+
+// get closest icosahedron triangle
+void getIcosaTriOld(vec3 pos, out vec3 p1, out vec3 p2, out vec3 p3)
+{
+    float dot1 = -1000.0;
+    float dot2 = -1000.0;
+    float dot3 = -1000.0;
+    for(int s1=0;s1<2;s1++)
+    {
+    	for(int s2=0;s2<2;s2++)
+        {
+    		for(int perm=0;perm<3;perm++)
+            {
+                vec3 p0 = normalize(vec3(G,1,0))*vec3(s1*2-1,s2*2-1,0);
+                if     (perm>1) p0 = p0.yzx;
+                else if(perm>0) p0 = p0.zxy;
+                float dot0 = dot(pos,p0);
+                if(dot0>dot1){
+                    dot3=dot2; p3=p2;
+                    dot2=dot1; p2=p1; 
+                    dot1=dot0; p1=p0;
+                }
+                else if(dot0>dot2){
+                    dot3=dot2; p3=p2;
+                    dot2=dot0; p2=p0; 
+                }
+                else if(dot0>dot3){
+                    dot3=dot0; p3=p0;
+                }
+            }
+        }
+    }
+}
+
+// check if pos hits triangle
+bool thruTriangle(vec3 pos, vec3 v1, vec3 v2, vec3 v3)
+{
+    vec3 n = cross(v2-v1,v3-v1);
+    // calc where pos hits triangle plane
+    pos = pos*dot(v1,n)/dot(pos,n);
+    v1-=pos; v2-=pos; v3-=pos;
+ 	vec3 c1=cross(v1,v2);
+    vec3 c2=cross(v2,v3);
+    vec3 c3=cross(v3,v1);
+    // check if the cross products of all the pos-edge-vectors show into the same direction
+    return dot(c1,c2)>0. && dot(c2,c3)>0. && dot(c3,c1)>0. ;
+}
+
+// subdivide 1 triangle into 4 triangles and give back closest triangle
+void getTriSubDiv(vec3 pos, inout vec3 p1, inout vec3 p2, inout vec3 p3)
+{
+    vec3 p4 = normalize(p1+p2);
+    vec3 p5 = normalize(p2+p3);
+    vec3 p6 = normalize(p3+p1);
+
+    // faster, but works only if triangle has postive umlaufsinn
+    if     (dot(pos,cross(p4,p5))<0.) { p1=p4; p2=p2; p3=p5; }
+    else if(dot(pos,cross(p5,p6))<0.) { p1=p6; p2=p5; p3=p3; }
+    else if(dot(pos,cross(p6,p4))<0.) { p1=p1; p2=p4; p3=p6; }
+    else                              { p1=p4; p2=p5; p3=p6; }
+
+    /*if     (sign(dot(pos,cross(p4,p5)))==sign(dot(p2,cross(p4,p5)))) { p1=p4; p2=p2; p3=p5; }
+    else if(sign(dot(pos,cross(p5,p6)))==sign(dot(p3,cross(p5,p6)))) { p1=p6; p2=p5; p3=p3; }
+    else if(sign(dot(pos,cross(p6,p4)))==sign(dot(p1,cross(p6,p4)))) { p1=p1; p2=p4; p3=p6; }
+    else                              { p1=p4; p2=p5; p3=p6; }*/
+
+    /*if     (thruTriangle(pos,p1,p4,p6)) { p1=p1; p2=p4; p3=p6; }
+    else if(thruTriangle(pos,p6,p5,p3)) { p1=p6; p2=p5; p3=p3; }
+    else if(thruTriangle(pos,p6,p4,p5)) { p1=p6; p2=p4; p3=p5; }
+    else if(thruTriangle(pos,p4,p2,p5)) { p1=p4; p2=p2; p3=p5; }*/
+}
+
+// get some 3d rand values by multiplying 2d rand in xy, yz, zx plane
+vec4 getRand(vec3 pos)
+{
+    vec4 r = vec4(1.0);
+    r*=textureLod(iChannel0,pos.xy,0.)*2.-1.;
+    r*=textureLod(iChannel0,pos.xz,0.)*2.-1.;
+    r*=textureLod(iChannel0,pos.zy,0.)*2.-1.;
+    return r;
+}
+
+// distancefield of torus around arbitrary axis z
+// similar to http://www.iquilezles.org/www/articles/distfunctions/distfunctions.htm
+float distTorus(vec3 pos, float r1, float r2, vec3 z)
+{
+    float pz = dot(pos,normalize(z));
+    return length(vec2(length(pos-z*pz)-r1,pz))-r2;
+}
+
+float getRand01Sph(vec3 pos)
+{
+    return textureLod(iChannel0,pos.xy*123.+pos.z,0.).x;
+}
+
+float distSphere(vec3 pos, float r)
+{
+	return length(pos)-r;
+}
+
+float calcAngle(vec3 v1, vec3 v2)
+{
+    return acos(dot(v1,v2)/length(v1)/length(v2));
+}
+
+// iq's smin
+float smin( float a, float b, float k )
+{
+    float h = clamp( 0.5+0.5*(b-a)/k, 0.0, 1.0 );
+    return mix( b, a, h ) - pow(abs(k*h*(1.0-h)),.93);
+}
+
+// distance to 2 torus segments in a triangle
+// each torus segment spans from the middle of one side to the middle of another side
+float distTruchet(vec3 pos, vec3 p1, vec3 p2, vec3 p3,float r, bool smth)
+{
+    float d = 10000.0;
+    float rnd=getRand01Sph(p1+p2+p3);
+
+    // random rotation of triangle-edges
+    // no mirroring
+    if      (rnd>.333) { vec3 d=p1; p1=p2; p2=p3; p3=d; }
+    else if (rnd>.666) { vec3 d=p1; p1=p3; p3=p2; p2=d; }
+    
+    vec3 p4=pos-normalize(p1+p2);
+    vec3 p5=pos-normalize(p2+p3);
+    vec3 p6=pos-normalize(p3+p1);
+    vec3 d1=p5-p4;
+    vec3 d2=p6-p4;
+    
+	d=min(d, length( p4 - d1*(dot(p4,d1)/dot(d1,d1)) )-r );
+	d=min(d, length( p4 - d2*(dot(p4,d2)/dot(d2,d2)) )-r );
+	//d=min(d, length(cross(p4,normalize(p5-p4)))-r );
+	//d=min(d, length(cross(p4,normalize(p6-p4)))-r );
+	
+	if(smth)
+	{
+        float rnd = .01*(getRand(pos*.3).x);
+
+        d=smin(d,length(p4)-2.2*r,.0065+rnd);
+        d=smin(d,length(p5)-2.2*r,.0065+rnd);
+        d=smin(d,length(p6)-2.2*r,.0065+rnd);
+	}
+	else
+	{
+        d=min(d,length(p4)-2.2*r);
+        d=min(d,length(p5)-2.2*r);
+        d=min(d,length(p6)-2.2*r);
+	}
+    return d;
+}
+
+// final distance funtion
+float dist(vec3 pos, bool smth)
+{
+    pos+=.00015*getRand(pos*1.3).xyz*4.;
+    pos+=.00006*getRand(pos*3.).xyz*4.;
+    pos+=.00040*getRand(pos*.5).xyz*4.;
+    vec3 p1,p2,p3;
+    float d = 10000.;
+    
+    // sphere in the middle
+	d=min(d,distSphere(pos,.9));
+    
+    // start with an icosahedron subdivided once
+    getIcosaTri(pos, p1, p2, p3);
+    getTriSubDiv(pos, p1, p2, p3);
+    // always sort by X, then Y, then Z - to get a unique order of the edges
+    //sortXYZ(p1,p2,p3);
+    float r0=.02;
+    d=min(d,distTruchet(pos, p1,p2,p3,r0,smth));
+    
+    float sc = 1.;
+    // subdivide again for another detail
+    getTriSubDiv(pos,p1,p2,p3);
+    //sortXYZ(p1,p2,p3);
+	sc = 1./.97;
+    d=min(d,distTruchet(pos*sc, p1,p2,p3,r0/2.,smth)/sc);
+    
+    // subdivide again for another detail
+	getTriSubDiv(pos,p1,p2,p3);
+    //sortXYZ(p1,p2,p3);
+    sc = 1./.96;
+    d=min(d,distTruchet(pos*sc, p1,p2,p3,r0/4.,smth)/sc);
+    
+    return d;
+}
+
+float dist(vec3 pos)
+{
+    return dist(pos,true);
+}
+
+vec3 getGrad(vec3 pos, float eps)
+{
+    vec2 d=vec2(eps,0);
+    float d0=dist(pos);
+    return vec3(dist(pos+d.xyy)-d0,
+                dist(pos+d.yxy)-d0,
+                dist(pos+d.yyx)-d0)/eps;
+                
+}
+
+// march it...
+vec4 march(inout vec3 pos, vec3 dir)
+{
+    // cull the sphere
+    if(length(pos-dir*dot(dir,pos))>1.05) 
+    	return vec4(0,0,0,1);
+    
+    float eps=0.001;
+    float bg=1.0;
+    for(int cnt=0;cnt<64;cnt++)
+    {
+        float d = dist(pos);
+        pos+=d*dir;
+        if(d<eps) { bg=0.0; break; }
+    }
+    vec3 n = getGrad(pos,.001);
+    return vec4(n,bg); // .w=1 => background
+}
+
+mat3 rotX(float ang)
+{
+    float c=cos(ang), s=sin(ang);
+    return mat3(1,0,0, 0,c,s, 0,-s,c);
+}
+
+mat3 rotZ(float ang)
+{
+    float c=cos(ang), s=sin(ang);
+    return mat3(c,s,0, -s,c,0, 0,0,1);
+}
+
+vec4 getRand(vec2 coord)
+{
+    vec4 c=vec4(0);
+    c+=texture(iChannel0,coord+.003*iTime);
+    c+=texture(iChannel0,coord/2.+.003*iTime)*2.;
+    c+=texture(iChannel0,coord/4.+.003*iTime)*4.;
+    c+=texture(iChannel0,coord/8.+.003*iTime)*8.;
+    return c/(1.+2.+4.+8.);
+}
+
+#define FloorZ -5.
+// envoronment just a sky and some floor grid...
+vec4 myenv(vec3 pos, vec3 dir, float period)
+{
+    vec3 colHor=vec3(.3,.4,.5)+.25;
+    //vec3 colSky=mix(vec3(1.5,.75,0.)*1.7,vec3(.8,.9,1)*1.2,clamp(7.*dir.z,0.,1.));
+    vec3 colSky=vec3(.8,.9,1)*1.2;
+    vec3 skyPos=pos+dir/abs(dir.z)*(20.-pos.z);
+    float cloudPat=(1.+.4*(getRand(skyPos.xy*.001).x-.5));
+    colSky*=mix(1.,cloudPat,step(0.,dir.z));
+    vec3 colFloor=vec3(.5,.6,.7);
+    vec3 colScale=vec3(1,1,1);
+    vec3 floorPos=pos-dir/dir.z*(pos.z-FloorZ);
+    vec2 s;
+    float scale=1.;
+    s=sin(floorPos.xy*PI2*.5*period);
+    scale*=(1.-.3*exp(-s.x*s.x/.01))*(1.-.3*exp(-s.y*s.y/.01));
+    s=sin(floorPos.xy*PI2*.5/10.*period);
+    scale*=(1.-.5*exp(-s.x*s.x/.001))*(1.-.5*exp(-s.y*s.y/.001));
+    //colFloor=mix(colFloor,colScale,1.-scale);
+    colFloor*=(1.+.4*(getRand(floorPos.xy*.001).x-.5));
+    vec3 col=mix(colSky,colFloor,1.-smoothstep(-.01,.01,dir.z));
+    col=mix(colHor,col,clamp(abs(dir.z*6.)-.1,0.,1.));
+    //return vec4(mix(vec3(.3,.4,.35),vec3(.8,1,.9),dir.z)*1.2+.4,1);
+    return vec4(col*1.1+.0*dir,1);
+}
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    // screen coord -1..1
+    vec2 sc = (fragCoord.xy/iResolution.xy)*2.-1.;
+    // viewer position
+    vec3 pos = vec3(0,-1.8,0);
+    #ifdef SHADEROO
+    pos.y+=iMouseData.z*.001;
+    #endif
+    // pixel view direction
+    vec3 dir = normalize(2.*normalize(-pos)+vec3(sc.x,0,sc.y*iResolution.y/iResolution.x));
+    // rotate view around x,z
+    float phi = iMouse.x/iResolution.x*7.;
+    float th  = iMouse.y/iResolution.y*7.;
+    if (iMouse.x==0.) { phi=iTime*.25; th=.27*.25*iTime; }
+    mat3 rx = rotX(th);
+    mat3 rz = rotZ(phi);
+    pos = rz*(rx*pos);
+    dir = rz*(rx*dir);
+    vec3 pos0 = pos;
+    
+    // march it...
+   	vec4 n=march(pos,dir);
+   	float actMat = clamp((dist(pos,false)-dist(pos,true))*5000.,0.,1.);
+    float bg=n.w;
+        
+    // reflection dir
+    vec3 R = pos-2.0*dot(pos,n.xyz)*n.xyz;
+    //R = -((R*rz)*rx).yzx;
+    R = normalize((pos-pos0)-2.0*dot((pos-pos0),n.xyz)*n.xyz);
+    //R = R*rz*rx;
+    
+    // calc some ambient occlusion
+    float ao=1.;
+    #if 0
+    // calc simple ao by stepping along radius
+    ao*=dist(pos*1.02)/.02;
+    ao*=dist(pos*1.05)/.05;
+    ao*=dist(pos*1.1)/.1;
+    #else
+    vec3 R2=normalize(3.*R.xyz+n.xyz);
+    // calc ao by stepping along normal
+    ao*=dist(pos+R2*.02)/.02;
+    ao*=dist(pos+R2*.05)/.05;
+    ao*=dist(pos+R2*.10)/.10;
+    #endif
+    // adjust contrast of ao
+    ao=pow(clamp(ao,0.,1.),.4);
+    ao=ao*.9+.1;
+    
+    vec3 c = mix(vec3(1),vec3(1.2,.65,.5)*1.2,clamp(dot(n.xyz,R),0.,1.));
+    c=mix(c,vec3(1.4),actMat);
+    // simply add some parts of the normal to the color
+    // gives impression of 3 lights from different dir with different color temperature
+    c += n.xyz*vec3(.05,.0,.05);
+
+    //  reflection of cubemap
+    //c *= mix(vec3(.3,.4,.35),vec3(.8,1,.9),R.z)*1.2+.4;
+    c *= myenv(pos,R,1.).xyz;
+    //c *= texture(iChannel1,R).xyz*1.5+.4;
+    
+    // add some depth darkening
+	//c*=clamp(-dot(dir,pos)*.7+.7, .2, 1.);
+    
+    // apply ambient occlusion
+    c*=ao;
+    
+    // apply background
+    if(bg>=.5) c=vec3(.5,.6,.75);
+    //if(bg>=.5) c=myenv(pos,dir,1.).xyz;
+    
+    // vignetting
+    float vign = (1.1-.5*dot(sc.xy,sc.xy));
+    
+	fragColor = vec4(c*vign,1);
+	//fragColor = vec4(R,1);
+	/*fragColor = vec4(R2,1);
+	if (fragCoord.x>iResolution.x*.5)
+	fragColor = vec4(n.xyz,1);*/
+}
+

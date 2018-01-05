@@ -1,0 +1,8 @@
+uniform vec3 iResolution;
+uniform float iGlobalTime;
+uniform float iChannelTime[4];
+uniform vec3 iChannelResolution[4];
+uniform vec4 iMouse;
+uniform samplerXX iChannel0..3;
+uniform vec4 iDate;
+uniform float iSampleRate;
